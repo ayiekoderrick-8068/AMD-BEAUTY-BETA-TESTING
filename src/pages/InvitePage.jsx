@@ -71,9 +71,9 @@ export default function InvitePage({ token, onNavigate, theme, onToggleTheme, a1
   }
 
   return (
-    <div className="page">
+    <main className="page">
       <TopBar theme={theme} onToggleTheme={onToggleTheme} a11y={a11y} onA11yChange={onA11yChange} />
       {body}
-    </div>
+    </main>
   );
 }

@@ -208,7 +208,7 @@ test("WhatsApp link carries the personalised, encoded message and is never auto-
   const { invitationMessage, whatsappUrl } = await import("../../src/utils/invite.js");
   const url = "http://localhost:3999/invite/abc_DEF-123";
   const msg = invitationMessage({ name: "Amina Wanjiru" }, url, { when: "", venue: "" });
-  assert.match(msg, /^Hello Amina! 💗/);
+  assert.match(msg, /^Hello Amina!\n/);
   assert.ok(msg.includes(url));
   assert.ok(!msg.includes("📅") && !msg.includes("📍")); // No invented date or venue.
   assert.ok(invitationMessage({ name: "A" }, url, { when: "Sat 6 PM", venue: "Glow Hall" }).includes("📍 Glow Hall"));

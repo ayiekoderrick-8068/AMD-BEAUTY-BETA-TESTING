@@ -16,7 +16,7 @@ export default function ResultsPage({ polls, onNavigate, theme, onToggleTheme, a
           {results.data.voters} {results.data.voters === 1 ? "person has" : "people have"} voted
           {live.connected ? " · updating live" : ""}
         </p>
-        {polls.map((poll) => <ResultsList key={poll.id} poll={poll} votes={results.data.votes} />)}
+        {polls.map((poll) => <ResultsList key={poll.id} poll={poll} votes={results.data.votes} heading="h2" />)}
       </>
     );
   } else if (hidden) {
@@ -39,7 +39,7 @@ export default function ResultsPage({ polls, onNavigate, theme, onToggleTheme, a
   }
 
   return (
-    <div className="page">
+    <main className="page">
       <TopBar
         onBack={() => onNavigate("poll")}
         backLabel="Back to poll"
@@ -53,6 +53,6 @@ export default function ResultsPage({ polls, onNavigate, theme, onToggleTheme, a
       </div>
       <h1 className="serif q-title">What everyone thinks</h1>
       {body}
-    </div>
+    </main>
   );
 }

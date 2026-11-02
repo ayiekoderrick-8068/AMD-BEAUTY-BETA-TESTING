@@ -6,7 +6,7 @@ export function invitationMessage(guest, url, event = {}) {
     event.venue && `📍 ${event.venue}`,
   ].filter(Boolean);
   return [
-    `Hello ${firstName}! 💗`,
+    `Hello ${firstName}!`,
     "",
     "You're invited to the AMD Beauty Product Launch!",
     "",

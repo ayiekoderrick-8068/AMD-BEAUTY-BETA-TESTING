@@ -9,9 +9,10 @@ import useLive from "../hooks/useLive";
 
 const DRAFT_KEY = "amd_draft";
 
-function Progress({ step, total }) {
+function Progress({ step, total, label }) {
+  const now = Math.min(step + 1, total);
   return (
-    <div className="steps" role="progressbar" aria-valuemin={1} aria-valuemax={total} aria-valuenow={Math.min(step + 1, total)}>
+    <div className="steps" role="progressbar" aria-label={label ?? `Question ${now} of ${total}`} aria-valuemin={1} aria-valuemax={total} aria-valuenow={now}>
       {Array.from({ length: total }, (_, i) => (
         <span key={i} className={`seg ${i <= step ? "on" : ""}`} />
       ))}
@@ -68,7 +69,7 @@ export default function PollPage({ polls, onNavigate, theme, onToggleTheme, a11y
   }, [step]);
 
   const shell = (children) => (
-    <div className="page">
+    <main className="page">
       <TopBar
         onBack={
           submitted || step === 0
@@ -82,7 +83,7 @@ export default function PollPage({ polls, onNavigate, theme, onToggleTheme, a11y
         onA11yChange={onA11yChange}
       />
       {children}
-    </div>
+    </main>
   );
 
   if (!status.data) {
@@ -139,7 +140,7 @@ export default function PollPage({ polls, onNavigate, theme, onToggleTheme, a11y
           <span className="pill live"><span className="live-dot" /> Live Poll</span>
           <span className="muted small">Review</span>
         </div>
-        <Progress step={total - 1} total={total} />
+        <Progress step={total - 1} total={total} label="Review your answers" />
         <h1 className="serif q-title" ref={headingRef} tabIndex={-1}>Review your answers</h1>
         <ul className="review glass slide-in">
           {polls.map((p, i) => (

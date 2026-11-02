@@ -16,13 +16,13 @@ export default function UsherPage({ data, error, loading, reload }) {
   const [filter, setFilter] = useState("all");
   const [notice, setNotice] = useState(null);
 
-  if (loading && !data) return <div className="page"><p className="empty" role="status">Loading guests…</p></div>;
+  if (loading && !data) return <main className="page"><p className="empty" role="status">Loading guests…</p></main>;
   if (!data) {
     return (
-      <div className="page">
+      <main className="page">
         <div className="msg error" role="alert">{error?.message ?? "Could not load guests."}</div>
         <button type="button" className="btn ghost block" onClick={reload}>Try again</button>
-      </div>
+      </main>
     );
   }
 
@@ -61,7 +61,7 @@ export default function UsherPage({ data, error, loading, reload }) {
   }
 
   return (
-    <div className="page">
+    <main className="page">
       <section className="stat glass lifted" aria-label="Attendance">
         <p className="eyebrow">Arrived</p>
         <div className="arrived">
@@ -108,6 +108,6 @@ export default function UsherPage({ data, error, loading, reload }) {
         ))}
       </ul>
       {results.length === 0 && <p className="empty">No guests found</p>}
-    </div>
+    </main>
   );
 }

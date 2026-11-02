@@ -30,7 +30,7 @@ export default function OrganizerPage({ overview, polls, busy, onSettings, onRes
   const answered = Math.max(0, ...polls.map((p) => tally(p, votes).total));
 
   return (
-    <div className="page">
+    <main className="page">
       <div className="stat-pair lifted">
         <section className="stat glass" aria-label="Checked in">
           <p className="eyebrow">Checked in</p>
@@ -86,6 +86,6 @@ export default function OrganizerPage({ overview, polls, busy, onSettings, onRes
           Reset poll votes
         </button>
       </section>
-    </div>
+    </main>
   );
 }

@@ -230,7 +230,7 @@ export default function AdminGuests({ guests, event, reload }) {
   }
 
   return (
-    <div className="page">
+    <main className="page">
       <section className="stat glass lifted">
         <p className="eyebrow">Add guest</p>
         <p className="muted small">A unique check-in code and invitation link are created automatically.</p>
@@ -283,6 +283,6 @@ export default function AdminGuests({ guests, event, reload }) {
         )}
       </ul>
       {list.length === 0 && <p className="empty">No guests found</p>}
-    </div>
+    </main>
   );
 }

@@ -54,7 +54,7 @@ export default function AdminUshers() {
   }
 
   return (
-    <div className="page">
+    <main className="page">
       <section className="stat glass lifted">
         <p className="eyebrow">Create usher account</p>
         <form className="code-form" onSubmit={create}>
@@ -114,6 +114,6 @@ export default function AdminUshers() {
         ))}
       </ul>
       {data && data.ushers.length === 0 && <p className="empty">No usher accounts yet.</p>}
-    </div>
+    </main>
   );
 }

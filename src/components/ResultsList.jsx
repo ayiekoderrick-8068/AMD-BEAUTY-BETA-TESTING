@@ -1,7 +1,8 @@
 import { useState, useEffect } from "react";
 import { tally } from "../utils/tally";
 
-export default function ResultsList({ poll, votes }) {
+// `heading` is the level of the question title: h3 under an h2 section (admin), h2 straight under the page h1.
+export default function ResultsList({ poll, votes, heading: Heading = "h3" }) {
   const { total, rows } = tally(poll, votes);
   const [ready, setReady] = useState(false);
 
@@ -14,7 +15,7 @@ export default function ResultsList({ poll, votes }) {
   return (
     <section className="results-card glass" aria-label={poll.text}>
       <div className="results-head">
-        <h3>{poll.text}</h3>
+        <Heading>{poll.text}</Heading>
         <span className="pill" aria-live="polite">
           {total} {total === 1 ? "vote" : "votes"}
         </span>

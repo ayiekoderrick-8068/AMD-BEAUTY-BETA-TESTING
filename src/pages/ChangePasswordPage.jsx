@@ -23,7 +23,7 @@ export default function ChangePasswordPage({ user, onChange, onLogout }) {
   }
 
   return (
-    <div className="auth-screen">
+    <main className="auth-screen">
       <header className="band">
         <div className="band-top">
           <span className="band-brand">LaunchPad</span>
@@ -55,6 +55,6 @@ export default function ChangePasswordPage({ user, onChange, onLogout }) {
         </button>
         <button className="btn ghost block" type="button" onClick={onLogout}>Log out</button>
       </form>
-    </div>
+    </main>
   );
 }

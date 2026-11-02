@@ -25,7 +25,7 @@ export default function LoginPage({ portal, onLogin, notice, theme, onToggleThem
   }
 
   return (
-    <div className="auth-screen">
+    <main className="auth-screen">
       <header className="band">
         <div className="band-top">
           <span className="band-brand">LaunchPad</span>
@@ -66,6 +66,6 @@ export default function LoginPage({ portal, onLogin, notice, theme, onToggleThem
           {busy ? "Signing in…" : "Sign in"}
         </button>
       </form>
-    </div>
+    </main>
   );
 }

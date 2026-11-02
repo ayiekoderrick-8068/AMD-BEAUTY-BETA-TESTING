@@ -42,7 +42,7 @@ export default function AdminPage({ user, onLogout, theme, onToggleTheme }) {
   } else if (section === "guests") {
     body = guests.data
       ? <AdminGuests guests={guests.data.guests} event={guests.data.event} reload={guests.reload} />
-      : <div className="page"><p className="empty" role="status">{guests.error?.message ?? "Loading…"}</p></div>;
+      : <main className="page"><p className="empty" role="status">{guests.error?.message ?? "Loading…"}</p></main>;
   } else {
     body = overview.data ? (
       <OrganizerPage
@@ -53,7 +53,7 @@ export default function AdminPage({ user, onLogout, theme, onToggleTheme }) {
         onResetVotes={() => act(() => api("/admin/poll/reset", { method: "POST" }))}
       />
     ) : (
-      <div className="page"><p className="empty" role="status">{overview.error?.message ?? "Loading…"}</p></div>
+      <main className="page"><p className="empty" role="status">{overview.error?.message ?? "Loading…"}</p></main>
     );
   }
 

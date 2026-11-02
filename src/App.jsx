@@ -86,7 +86,7 @@ export default function App() {
   if (route === "results") return <ResultsPage polls={polls} onNavigate={navigate} {...attendeeProps} />;
 
   // ---- Staff (private) ----
-  if (auth.loading) return <p className="empty" role="status">Checking sign-in…</p>;
+  if (auth.loading) return <main><p className="empty" role="status">Checking sign-in…</p></main>;
 
   if (loginRole) {
     if (auth.user?.role === loginRole) return null; // Redirecting.
