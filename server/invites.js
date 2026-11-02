@@ -1,7 +1,7 @@
 // Guest invitation links: random tokens, looked up by SHA-256 hash.
 // The raw token is also kept encrypted (AES-256-GCM) so an admin can copy the same link again;
 // it is never stored in plain text.
-import { randomBytes, createHash, createCipheriv, createDecipheriv } from "node:crypto";
+import { randomBytes, createHash, createHmac, createCipheriv, createDecipheriv } from "node:crypto";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { db, DATA_DIR, getEvent } from "./db.js";
 
@@ -18,6 +18,10 @@ function loadKey() {
   return Buffer.from(readFileSync(KEY_FILE, "utf8").trim(), "base64");
 }
 const KEY = loadKey();
+
+// Ballots are keyed by this, not by the guest id: one stable value per guest (so a guest can vote once),
+// but nothing stored with a vote names the guest unless you also hold the server key.
+export const voterId = (guestId) => createHmac("sha256", KEY).update(`voter:${guestId}`).digest("hex").slice(0, 32);
 
 export const TOKEN_RE = /^[A-Za-z0-9_-]{43}$/;
 const hashToken = (token) => createHash("sha256").update(token).digest("hex");

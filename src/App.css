@@ -15,10 +15,10 @@
   --muted: #7a5f6c;
   --accent: #a94a65;
   --accent-soft: rgba(201, 106, 130, 0.18);
-  --btn: linear-gradient(135deg, #c76a82, #a94a65);
+  --btn: linear-gradient(135deg, #b5566f, #a94a65); /* white text stays above 4.5:1 across the whole gradient */
   --on-btn: #ffffff;
   --track: rgba(169, 74, 101, 0.14);
-  --success: #23805a;
+  --success: #1f7550; /* 4.9:1 on --success-bg (was 4.25:1) */
   --success-bg: #e0f4ea;
   --warn: #8a5a05;
   --warn-bg: #fdf0d6;
@@ -207,6 +207,7 @@ a { color: var(--accent); }
   background: var(--accent-soft); color: var(--accent); font-size: 0.8rem; font-weight: 600; letter-spacing: 0.04em;
 }
 .pill.live { text-transform: uppercase; }
+:root[data-theme="light"] .pill { color: #9a3f59; } /* 4.1:1 -> 4.9:1 on the soft pink fill */
 .live-dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; animation: pulse 1.8s ease-in-out infinite; }
 @keyframes pulse { 50% { opacity: 0.35; transform: scale(0.8); } }
 

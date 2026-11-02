@@ -8,7 +8,7 @@ Built with React and Vite on the front end and a small Node server that uses onl
 
 | Who | Flow | Access |
 | --- | --- | --- |
-| Attendee | `/` → `/showcase` → `/poll` → `/results` | Public, no login |
+| Attendee | invitation link → `/showcase` → `/poll` → `/results` | No login. Voting needs the guest's own invitation link and a check-in |
 | Usher | `/staff/login` → `/usher` | Usher account |
 | Admin | `/admin/login` → `/admin` | Admin account |
 
@@ -18,7 +18,7 @@ Staff pages are not linked from the public site, and the API checks the user's r
 
 - **Landing:** the pink-splash launch screen with a **Get started** button.
 - **Products:** a swipeable carousel of the four shades on phones, or a grid on desktop. Each shade has its own detail view.
-- **Live poll:** three questions with a progress bar, a review step and one submission per device. Answers in progress survive a page refresh.
+- **Live poll:** three questions with a progress bar, a review step and one vote per guest. Answers in progress survive a page refresh. Voting is locked until the guest has opened their own invitation link **and** an usher has checked them in; the page unlocks by itself the moment that happens.
 - **Waiting screen:** shown while the poll is closed. It has a practice question that is not counted, and it switches to the poll as soon as the organizer opens it.
 - **Thank you and results:** results update live once the organizer makes them visible.
 - **Display settings:** light and dark themes, larger text and a high-contrast mode.
@@ -73,6 +73,7 @@ Lost the admin password? Run `npm run reset-admin` on the server. It writes a ne
 | `npm run build` | Production build into `dist/` |
 | `npm start` | Serves `dist/` and the API from one process (production mode) |
 | `npm test` | API tests against a throwaway database |
+| `npm run test:e2e` | Builds the app and runs the Playwright browser tests (first time: `npx playwright install chromium`) |
 | `npm run lint` | ESLint |
 
 ## Production
@@ -104,7 +105,9 @@ npm start        # port 3001 by default
 - Deactivating an usher or resetting a password takes effect on that user's next request.
 - Sign-in is rate limited: 5 failures per username and IP address, or 20 per IP address, within 15 minutes.
 - Requests that change data must come from the same origin, so cross-site requests are rejected.
-- The poll is anonymous: one vote per browser, identified by a cookie. Someone clearing cookies or using a private window can vote again, so treat results as a live pulse, not an audited count.
+- **Voting is tied to checked-in guests.** Opening an invitation link stores that guest's token in an `HttpOnly` cookie. The server then lets that browser vote only if the guest is checked in and the invitation is not revoked, once per guest (a second phone using the same link is refused too). Eligibility is decided on the server; nothing the page sends can grant it. Undoing a check-in or revoking an invitation withdraws the right to vote.
+- **Ballots are pseudonymous.** Votes are stored under a keyed hash of the guest, not the guest's id or name, so the database alone does not show who voted for what. The key is the same one that protects invitation links (`INVITE_KEY` or `server/data/invite.key`): back it up, and do not change it mid-event.
+- Anyone holding a guest's invitation link can vote as that guest once they are checked in, so treat links like tickets.
 
 ## Project structure
 
@@ -115,6 +118,7 @@ server/
   db.js           SQLite schema and settings
   seed.js         first staff accounts and sample guests
   test/           API tests (node --test)
+e2e/              Playwright browser tests (own server and database on port 3995)
 src/
   App.jsx         routing and role guards
   App.css         design tokens, light and dark themes, glass components

@@ -37,9 +37,38 @@ function ThankYou({ resultsVisible, onNavigate }) {
   );
 }
 
+// Voting is for checked-in guests who opened their own invitation link; the server decides (`access`).
+const LOCKED = {
+  no_invite: {
+    title: "Open your invitation to vote",
+    text: "Voting is for checked-in guests. Open the invitation link you were sent, then check in with an usher at the door.",
+  },
+  not_checked_in: {
+    title: "Check in to unlock the poll",
+    text: "Show your invitation to an usher. This page unlocks by itself as soon as you are checked in.",
+    waiting: true,
+  },
+  revoked: {
+    title: "Invitation cancelled",
+    text: "This invitation is no longer valid. Please ask an usher for help.",
+  },
+};
+
+function PollLocked({ access, onBack }) {
+  const { title, text, waiting } = LOCKED[access] ?? LOCKED.no_invite;
+  return (
+    <div className="card-center glass waiting-card">
+      {waiting && <div className="pulse" aria-hidden="true" />}
+      <h1 className="serif">{title}</h1>
+      <p className="muted" role="status">{text}</p>
+      <button type="button" className="btn ghost block" onClick={onBack}>Back to products</button>
+    </div>
+  );
+}
+
 export default function PollPage({ polls, onNavigate, theme, onToggleTheme, a11y, onA11yChange }) {
   const total = polls.length;
-  const live = useLive(["poll"]);
+  const live = useLive(["poll", "checkins"]); // "checkins": the poll unlocks the moment an usher checks the guest in
   const status = useApiData("/poll", live.tick);
   // A draft saved against different questions or options is dropped rather than shown as answers.
   const signature = polls.map((p) => `${p.id}:${p.options.map((o) => o.label).join("|")}`).join(";");
@@ -102,6 +131,10 @@ export default function PollPage({ polls, onNavigate, theme, onToggleTheme, a11y
 
   if (submitted) {
     return shell(<ThankYou resultsVisible={settings.resultsVisible} onNavigate={onNavigate} />);
+  }
+
+  if (status.data.access !== "ok") {
+    return shell(<PollLocked access={status.data.access} onBack={() => onNavigate("showcase")} />);
   }
 
   // Live updates flip this screen to the poll as soon as the organizer opens it.

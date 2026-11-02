@@ -1,11 +1,11 @@
 // LaunchPad API: built-in node:http, node:sqlite and node:crypto only.
 import { createServer } from "node:http";
-import { randomBytes, randomInt } from "node:crypto";
+import { randomInt } from "node:crypto";
 import { readFile, stat } from "node:fs/promises";
 import { extname, join, resolve, dirname, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { db, transaction, getSettings, setSetting, getEvent, setEvent } from "./db.js";
-import { issueInvitation, revokeInvitation, backfillInvitations, invitationFor, findInvitation } from "./invites.js";
+import { issueInvitation, revokeInvitation, backfillInvitations, invitationFor, findInvitation, voterId } from "./invites.js";
 import {
   SESSION_COOKIE, hashPassword, verifyPassword, generateTempPassword, passwordProblem,
   DUMMY_HASH, createSession, userFromToken, destroySession, destroyUserSessions,
@@ -16,7 +16,8 @@ import { polls } from "../src/data/polls.js";
 
 const PORT = Number(process.env.PORT ?? 3001);
 const PROD = process.env.NODE_ENV === "production";
-const ATTENDEE_COOKIE = "amd_aid";
+// Set when a guest opens their invitation link; it is how the poll knows which guest is voting.
+const INVITE_COOKIE = "amd_invite";
 const DIST = resolve(dirname(fileURLToPath(import.meta.url)), "../dist");
 
 // ---------- helpers ----------
@@ -424,31 +425,51 @@ route("GET", "/api/invite/:token", (ctx) => {
   if (found.status === "expired") throw new HttpError(410, "This invitation has expired.");
   const guest = db.prepare("SELECT name, code FROM guests WHERE id = ?").get(found.row.guest_id);
   const { when, venue } = getEvent();
+  // HttpOnly, so page scripts never see the token; it only unlocks voting once the guest is checked in.
+  ctx.setCookie(cookie(INVITE_COOKIE, ctx.params.token, { maxAge: 60 * 60 * 24 * 7 }));
   return { guest: { name: guest.name }, code: guest.code, event: { when, venue } };
 });
 
-// Public: attendee poll. Attendees are anonymous; an HttpOnly cookie identifies the browser.
+// Poll: only a guest who is checked in can vote, once. Who is voting comes from the invitation link
+// this browser opened (an HttpOnly cookie), never from anything the page sends.
+// `access` tells the page why voting is locked: no_invite | revoked | not_checked_in | ok.
+function voterAccess(ctx) {
+  const found = findInvitation(ctx.cookies[INVITE_COOKIE] ?? "");
+  if (!found) return { access: "no_invite" };
+  const voter = voterId(found.row.guest_id);
+  if (found.status === "revoked") return { access: "revoked", voter };
+  if (!db.prepare("SELECT 1 FROM checkins WHERE guest_id = ?").get(found.row.guest_id)) return { access: "not_checked_in", voter };
+  return { access: "ok", voter };
+}
+
+const VOTE_BLOCKED = {
+  no_invite: "Open your invitation link to vote.",
+  revoked: "Your invitation was cancelled. Please ask an usher for help.",
+  not_checked_in: "Please check in with an usher to unlock the poll.",
+};
+
 route("GET", "/api/poll", (ctx) => {
   const { pollOpen, resultsVisible } = getSettings();
-  const aid = ctx.attendeeId();
-  const answered = db.prepare("SELECT COUNT(*) AS n FROM votes WHERE attendee_id = ?").get(aid).n;
-  return { open: pollOpen, resultsVisible, submitted: answered >= polls.length };
+  const { access, voter } = voterAccess(ctx);
+  const answered = voter ? db.prepare("SELECT COUNT(*) AS n FROM votes WHERE attendee_id = ?").get(voter).n : 0;
+  return { open: pollOpen, resultsVisible, access, submitted: answered >= polls.length };
 });
 
 route("POST", "/api/poll/vote", async (ctx) => {
   const body = await readJson(ctx.req);
+  const { access, voter } = voterAccess(ctx);
+  if (access !== "ok") throw new HttpError(403, VOTE_BLOCKED[access]);
   const answers = body.answers && typeof body.answers === "object" ? body.answers : {};
   for (const p of polls) {
     if (!p.options.some((o) => o.label === answers[p.id])) throw new HttpError(400, "Please answer every question.");
   }
-  const aid = ctx.attendeeId();
   transaction(() => {
     if (!getSettings().pollOpen) throw new HttpError(409, "The poll is closed.");
-    if (db.prepare("SELECT 1 FROM votes WHERE attendee_id = ?").get(aid)) {
+    if (db.prepare("SELECT 1 FROM votes WHERE attendee_id = ?").get(voter)) {
       throw new HttpError(409, "You have already voted.");
     }
     const insert = db.prepare("INSERT INTO votes (attendee_id, question_id, option) VALUES (?, ?, ?)");
-    for (const p of polls) insert.run(aid, p.id, answers[p.id]);
+    for (const p of polls) insert.run(voter, p.id, answers[p.id]);
   });
   broadcast("poll");
   return { ok: true };
@@ -503,19 +524,11 @@ async function handle(req, res) {
   const setCookies = [];
   const ctx = {
     req,
+    cookies,
     token: cookies[SESSION_COOKIE],
     user: userFromToken(cookies[SESSION_COOKIE]),
     params: {},
     setCookie: (c) => setCookies.push(c),
-    attendeeId() {
-      let aid = cookies[ATTENDEE_COOKIE];
-      if (!aid || !/^[A-Za-z0-9_-]{20,64}$/.test(aid)) {
-        aid = randomBytes(24).toString("base64url");
-        cookies[ATTENDEE_COOKIE] = aid;
-        setCookies.push(cookie(ATTENDEE_COOKIE, aid, { maxAge: 60 * 60 * 24 * 30, sameSite: "Lax" }));
-      }
-      return aid;
-    },
   };
 
   // Cross-site request protection for state-changing calls (on top of SameSite cookies).

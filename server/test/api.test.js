@@ -3,6 +3,7 @@ import test, { after } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
+import { DatabaseSync } from "node:sqlite";
 import { join } from "node:path";
 
 const dataDir = mkdtempSync(join(tmpdir(), "launchpad-test-"));
@@ -245,33 +246,88 @@ test("admin creates, deactivates and resets an usher; deactivation is immediate"
   assert.equal(relog.body.user.mustChange, true);
 });
 
-test("attendee votes once; validation, visibility and closing are enforced", async () => {
-  const a = client();
-  // A fresh database starts with the poll closed and results hidden.
-  assert.equal((await a("GET", "/api/poll")).body.open, false);
-  assert.equal((await a("POST", "/api/poll/vote", { answers })).status, 409);
-  assert.equal((await a("GET", "/api/poll/results")).status, 403);
-  await admin("PUT", "/api/admin/settings", { pollOpen: true, resultsVisible: true });
-  assert.equal((await a("GET", "/api/poll")).body.submitted, false);
-  assert.equal((await a("POST", "/api/poll/vote", { answers: { ...answers, q2: "Natural ingredients" } })).status, 400);
-  assert.equal((await a("POST", "/api/poll/vote", { answers: { q1: "Toast" } })).status, 400);
-  assert.equal((await a("POST", "/api/poll/vote", { answers })).status, 200);
-  assert.equal((await a("POST", "/api/poll/vote", { answers })).status, 409);
-  assert.equal((await a("GET", "/api/poll")).body.submitted, true);
+// A guest's phone: a cookie jar that has opened the guest's own invitation link.
+async function guestDevice(name) {
+  const g = (await admin("POST", "/api/admin/guests", { name })).body.guest;
+  const token = g.invitation.url.split("/invite/")[1];
+  const device = client();
+  assert.equal((await device("GET", `/api/invite/${token}`)).status, 200);
+  return { g, token, device };
+}
 
-  const r = await a("GET", "/api/poll/results");
+test("only a checked-in guest can vote, once; ballots never name the guest", async () => {
+  const stranger = client();
+  assert.equal((await stranger("GET", "/api/poll")).body.access, "no_invite");
+  assert.equal((await stranger("POST", "/api/poll/vote", { answers })).status, 403);
+  // A guessed or forged cookie is no better than none.
+  const forged = { cookie: `amd_invite=${"A".repeat(43)}` };
+  assert.equal((await stranger("GET", "/api/poll", undefined, forged)).body.access, "no_invite");
+  assert.equal((await stranger("POST", "/api/poll/vote", { answers }, forged)).status, 403);
+
+  const { g, token, device } = await guestDevice("Vera Voter");
+  // Opening the link is not enough: the guest must be checked in at the door first.
+  assert.equal((await device("GET", "/api/poll")).body.access, "not_checked_in");
+  assert.equal((await device("POST", "/api/poll/vote", { answers })).status, 403);
+  assert.equal((await usher("POST", "/api/checkin", { guestId: g.id })).body.status, "ok");
+  assert.equal((await device("GET", "/api/poll")).body.access, "ok");
+
+  // A fresh database starts with the poll closed and results hidden.
+  assert.equal((await device("GET", "/api/poll")).body.open, false);
+  assert.equal((await device("POST", "/api/poll/vote", { answers })).status, 409);
+  assert.equal((await stranger("GET", "/api/poll/results")).status, 403);
+  await admin("PUT", "/api/admin/settings", { pollOpen: true, resultsVisible: true });
+
+  assert.equal((await device("GET", "/api/poll")).body.submitted, false);
+  assert.equal((await device("POST", "/api/poll/vote", { answers: { ...answers, q2: "Natural ingredients" } })).status, 400);
+  assert.equal((await device("POST", "/api/poll/vote", { answers: { q1: "Toast" } })).status, 400);
+  assert.equal((await device("POST", "/api/poll/vote", { answers })).status, 200);
+  assert.equal((await device("POST", "/api/poll/vote", { answers })).status, 409);
+  assert.equal((await device("GET", "/api/poll")).body.submitted, true);
+
+  // The same guest on a second device (same link) still gets one vote only.
+  const second = client();
+  await second("GET", `/api/invite/${token}`);
+  assert.equal((await second("GET", "/api/poll")).body.submitted, true);
+  assert.equal((await second("POST", "/api/poll/vote", { answers })).status, 409);
+
+  const r = await stranger("GET", "/api/poll/results");
   assert.equal(r.body.votes.q1.Toast, 1);
   assert.equal(r.body.voters, 1);
 
+  // Nothing public carries the token, and ballots are not stored under the guest id.
+  const publicBodies = JSON.stringify([(await device("GET", "/api/poll")).body, r.body]);
+  assert.ok(!publicBodies.includes(token) && !publicBodies.includes("Vera"));
+  const sqlite = new DatabaseSync(join(dataDir, "launchpad.db"), { readOnly: true });
+  const stored = sqlite.prepare("SELECT DISTINCT attendee_id AS id FROM votes").all().map((v) => v.id);
+  sqlite.close();
+  assert.ok(stored.every((id) => /^[0-9a-f]{32}$/.test(id) && id !== String(g.id)));
+
   await admin("PUT", "/api/admin/settings", { resultsVisible: false });
-  assert.equal((await a("GET", "/api/poll/results")).status, 403);
+  assert.equal((await stranger("GET", "/api/poll/results")).status, 403);
   assert.equal((await admin("GET", "/api/poll/results")).status, 200);
   await admin("PUT", "/api/admin/settings", { resultsVisible: true, pollOpen: false });
-  const b = client();
-  assert.equal((await b("POST", "/api/poll/vote", { answers })).status, 409);
+  const b = await guestDevice("Ben Voter");
+  await usher("POST", "/api/checkin", { guestId: b.g.id });
+  assert.equal((await b.device("POST", "/api/poll/vote", { answers })).status, 409);
   await admin("PUT", "/api/admin/settings", { pollOpen: true });
-  assert.equal((await b("POST", "/api/poll/vote", { answers })).status, 200);
+  assert.equal((await b.device("POST", "/api/poll/vote", { answers })).status, 200);
   assert.equal((await admin("GET", "/api/admin/overview")).body.voters, 2);
+});
+
+test("voting is withdrawn when a guest's invitation is revoked or their check-in is undone", async () => {
+  const a = await guestDevice("Rita Revoked");
+  await usher("POST", "/api/checkin", { guestId: a.g.id });
+  await admin("DELETE", `/api/admin/guests/${a.g.id}/invitation`);
+  assert.equal((await a.device("GET", "/api/poll")).body.access, "revoked");
+  assert.equal((await a.device("POST", "/api/poll/vote", { answers })).status, 403);
+
+  const u = await guestDevice("Una Undone");
+  await usher("POST", "/api/checkin", { guestId: u.g.id });
+  assert.equal((await u.device("GET", "/api/poll")).body.access, "ok");
+  await admin("DELETE", `/api/admin/guests/${u.g.id}/checkin`);
+  assert.equal((await u.device("POST", "/api/poll/vote", { answers })).status, 403);
+  await admin("DELETE", `/api/admin/guests/${a.g.id}`);
+  await admin("DELETE", `/api/admin/guests/${u.g.id}`);
 });
 
 test("cross-site requests are rejected", async () => {

@@ -67,8 +67,8 @@ export default function ShowcasePage({ onNavigate, theme, onToggleTheme, a11y, o
                 <div className="product-info">
                   <h2 className="serif">{p.name}</h2>
                   <p>{p.shade}</p>
-                  <button type="button" className="product-btn" onClick={() => setSelectedId(p.id)}>
-                    View shade<span className="sr-only">: {p.name}</span>
+                  <button type="button" className="product-btn" aria-label={`View shade: ${p.name}`} onClick={() => setSelectedId(p.id)}>
+                    View shade
                   </button>
                 </div>
               </article>
