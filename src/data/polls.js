@@ -4,9 +4,10 @@ export const polls = [
     id: "q1",
     text: "Which shade is your favourite?",
     options: [
-      { label: "Rasberry", hint: "Warm nude", swatch: "linear-gradient(135deg,#dba086,#a85b43)" },
-      { label: "Toast", hint: "Rich berry", swatch: "linear-gradient(135deg,#c2185b,#5e0f35)" },
-      { label: "Ribbon", hint: "Soft pink", swatch: "linear-gradient(135deg,#fadbe3,#e99db1)" },
+      { label: "Raspberry Jelly", hint: "Raspberry pink", swatch: "linear-gradient(135deg,#e8517f,#d6245a)" },
+      { label: "Toast", hint: "Warm peach nude", swatch: "linear-gradient(135deg,#e8b09c,#d98c74)" },
+      { label: "Mocha", hint: "Chocolate brown", swatch: "linear-gradient(135deg,#a05a45,#7a3a2a)" },
+      { label: "Ribbon", hint: "Soft baby pink", swatch: "linear-gradient(135deg,#fadbe3,#f08aa6)" },
     ],
   },
   {

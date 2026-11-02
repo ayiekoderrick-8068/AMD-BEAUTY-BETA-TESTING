@@ -1,5 +1,11 @@
 // SQLite database (Node's built-in node:sqlite, no extra dependency).
-import { DatabaseSync } from "node:sqlite";
+let DatabaseSync;
+try {
+  ({ DatabaseSync } = await import("node:sqlite"));
+} catch {
+  console.error(`LaunchPad needs Node 22.13 or newer (built-in node:sqlite). You are running ${process.version}.`);
+  process.exit(1);
+}
 import { mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -71,13 +77,16 @@ db.exec(`
     revoked_at TEXT
   );
 
-  INSERT OR IGNORE INTO settings (key, value) VALUES ('poll_open', '1'), ('results_visible', '1');
+  INSERT OR IGNORE INTO settings (key, value) VALUES ('poll_open', '0'), ('results_visible', '0');
 `);
 
 // Columns added after the first release.
 if (!db.prepare("SELECT 1 FROM pragma_table_info('guests') WHERE name = 'phone'").get()) {
   db.exec("ALTER TABLE guests ADD COLUMN phone TEXT NOT NULL DEFAULT ''");
 }
+
+// The first release spelled the shade "Rasberry"; votes are stored by label, so carry them over.
+db.prepare("UPDATE votes SET option = 'Raspberry Jelly' WHERE question_id = 'q1' AND option = 'Rasberry'").run();
 
 export function transaction(fn) {
   db.exec("BEGIN IMMEDIATE");

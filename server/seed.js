@@ -40,8 +40,10 @@ export function seed() {
     writeFileSync(CREDENTIALS_FILE, lines.join("\n"), { mode: 0o600 });
   }
 
+  // Sample guests have guessable codes, so a production database only gets them on request.
+  const wantSamples = process.env.NODE_ENV !== "production" || process.env.SEED_SAMPLE_GUESTS === "1";
   const hasGuests = db.prepare("SELECT COUNT(*) AS n FROM guests").get().n > 0;
-  if (!hasGuests) {
+  if (wantSamples && !hasGuests) {
     const insert = db.prepare("INSERT INTO guests (name, organization, ticket_type, code) VALUES (?, ?, ?, ?)");
     for (const g of SAMPLE_GUESTS) insert.run(g.name, g.organization, g.ticketType, g.code);
   }

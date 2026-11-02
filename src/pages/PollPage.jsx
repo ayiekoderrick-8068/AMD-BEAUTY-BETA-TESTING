@@ -40,9 +40,12 @@ export default function PollPage({ polls, onNavigate, theme, onToggleTheme, a11y
   const total = polls.length;
   const live = useLive(["poll"]);
   const status = useApiData("/poll", live.tick);
+  // A draft saved against different questions or options is dropped rather than shown as answers.
+  const signature = polls.map((p) => `${p.id}:${p.options.map((o) => o.label).join("|")}`).join(";");
   const [draft, setDraft] = useState(() => {
     const saved = loadData(DRAFT_KEY, null);
-    return { answers: saved?.answers ?? {}, step: Math.min(saved?.step ?? 0, total) };
+    if (saved?.signature !== signature) return { answers: {}, step: 0 };
+    return { answers: saved.answers ?? {}, step: Math.min(saved.step ?? 0, total) };
   });
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -52,8 +55,8 @@ export default function PollPage({ polls, onNavigate, theme, onToggleTheme, a11y
 
   // Answers in progress survive a refresh; they only leave the device on Submit.
   useEffect(() => {
-    if (!submitted) saveData(DRAFT_KEY, draft);
-  }, [draft, submitted]);
+    if (!submitted) saveData(DRAFT_KEY, { ...draft, signature });
+  }, [draft, submitted, signature]);
 
   // Move focus to each new question so screen readers read it out (not on first load).
   const headingRef = useRef(null);

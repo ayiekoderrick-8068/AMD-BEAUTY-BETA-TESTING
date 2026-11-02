@@ -56,6 +56,13 @@ export default function App() {
   // Attendee screens also get the text size / high contrast controls.
   const attendeeProps = { ...themeProps, a11y, onA11yChange: setA11y };
 
+  // A staff request came back 401: re-check the session so the guard below sends them to sign in.
+  const { refresh } = auth;
+  useEffect(() => {
+    window.addEventListener("amd:signed-out", refresh);
+    return () => window.removeEventListener("amd:signed-out", refresh);
+  }, [refresh]);
+
   // Send visitors without the right role to the matching login page (and signed-in staff away from it).
   useEffect(() => {
     if (auth.loading) return;

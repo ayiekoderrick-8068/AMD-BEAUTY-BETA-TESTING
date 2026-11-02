@@ -2,13 +2,13 @@
 import { createServer } from "node:http";
 import { randomBytes, randomInt } from "node:crypto";
 import { readFile, stat } from "node:fs/promises";
-import { extname, join, resolve, dirname } from "node:path";
+import { extname, join, resolve, dirname, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { db, transaction, getSettings, setSetting, getEvent, setEvent } from "./db.js";
 import { issueInvitation, revokeInvitation, backfillInvitations, invitationFor, findInvitation } from "./invites.js";
 import {
   SESSION_COOKIE, hashPassword, verifyPassword, generateTempPassword, passwordProblem,
-  createSession, userFromToken, destroySession, destroyUserSessions,
+  DUMMY_HASH, createSession, userFromToken, destroySession, destroyUserSessions,
   isRateLimited, recordFailure, clearFailures,
 } from "./auth.js";
 import { seed, CREDENTIALS_FILE } from "./seed.js";
@@ -28,7 +28,10 @@ function parseCookies(req) {
   const out = {};
   for (const part of (req.headers.cookie ?? "").split(";")) {
     const i = part.indexOf("=");
-    if (i > 0) out[part.slice(0, i).trim()] = decodeURIComponent(part.slice(i + 1).trim());
+    if (i <= 0) continue;
+    let value = part.slice(i + 1).trim();
+    try { value = decodeURIComponent(value); } catch { /* malformed escape: keep the raw value, it will simply not match */ }
+    out[part.slice(0, i).trim()] = value;
   }
   return out;
 }
@@ -70,7 +73,15 @@ async function readJson(req) {
 }
 
 const str = (v, max = 120) => (typeof v === "string" ? v.trim().slice(0, max) : "");
-const clientIp = (req) => req.socket.remoteAddress ?? "unknown";
+// Behind a reverse proxy every request arrives from the proxy's address. With TRUST_PROXY=1 the
+// last X-Forwarded-For entry (the one the nearest proxy added) is used for rate limiting instead.
+function clientIp(req) {
+  if (process.env.TRUST_PROXY) {
+    const hops = String(req.headers["x-forwarded-for"] ?? "").split(",").map((h) => h.trim()).filter(Boolean);
+    if (hops.length) return hops[hops.length - 1];
+  }
+  return req.socket.remoteAddress ?? "unknown";
+}
 
 // ---------- live updates (Server-Sent Events) ----------
 // Events only name what changed; clients refetch through their own authorised endpoints.
@@ -106,6 +117,14 @@ function adminGuest(id, req, event = getEvent()) {
   if (!g) return null;
   const { phone } = db.prepare("SELECT phone FROM guests WHERE id = ?").get(id);
   return { ...g, phone, invitation: invitationFor(id, baseUrl(req), event) };
+}
+
+// Same phone number, or same name and organization, is almost certainly the same person entered twice.
+function assertNotDuplicate(g, exceptId = 0) {
+  const clash = db.prepare(
+    `SELECT name FROM guests WHERE id != ? AND ((? != '' AND phone = ?) OR (name = ? COLLATE NOCASE AND organization = ? COLLATE NOCASE)) LIMIT 1`
+  ).get(exceptId, g.phone, g.phone, g.name, g.organization);
+  if (clash) throw new HttpError(409, `${clash.name} is already on the guest list with the same phone number or name and organization.`);
 }
 
 function generateCode() {
@@ -170,7 +189,8 @@ route("POST", "/api/auth/login", async (ctx) => {
   if (isRateLimited(ip, username)) throw new HttpError(429, "Too many attempts. Try again in 15 minutes.");
 
   const user = db.prepare("SELECT * FROM users WHERE username = ?").get(username);
-  const valid = user && verifyPassword(password, user.password_hash);
+  // Unknown usernames still pay for a hash check so response time does not reveal which exist.
+  const valid = verifyPassword(password, user?.password_hash ?? DUMMY_HASH) && Boolean(user);
   // Same message for every failure so usernames cannot be probed.
   if (!valid || !user.active || user.role !== portal) {
     recordFailure(ip, username);
@@ -243,6 +263,7 @@ route("GET", "/api/admin/guests", (ctx) => {
 route("POST", "/api/admin/guests", async (ctx) => {
   requireUser(ctx, "admin");
   const g = guestInput(await readJson(ctx.req));
+  assertNotDuplicate(g);
   // Every new guest gets an invitation link straight away.
   const id = transaction(() => {
     const { lastInsertRowid } = db
@@ -258,6 +279,7 @@ route("POST", "/api/admin/guests", async (ctx) => {
 route("PUT", "/api/admin/guests/:id", async (ctx) => {
   requireUser(ctx, "admin");
   const g = guestInput(await readJson(ctx.req));
+  assertNotDuplicate(g, ctx.params.id);
   const { changes } = db
     .prepare("UPDATE guests SET name = ?, organization = ?, ticket_type = ?, phone = ? WHERE id = ?")
     .run(g.name, g.organization, g.ticketType, g.phone, ctx.params.id);
@@ -288,6 +310,15 @@ route("DELETE", "/api/admin/guests/:id/invitation", (ctx) => {
   if (!db.prepare("SELECT 1 FROM guests WHERE id = ?").get(ctx.params.id)) throw new HttpError(404, "Guest not found.");
   revokeInvitation(ctx.params.id);
   broadcast("guests");
+  return { guest: adminGuest(ctx.params.id, ctx.req) };
+});
+
+// Undo a mistaken check-in so the guest can be checked in again.
+route("DELETE", "/api/admin/guests/:id/checkin", (ctx) => {
+  requireUser(ctx, "admin");
+  if (!db.prepare("SELECT 1 FROM guests WHERE id = ?").get(ctx.params.id)) throw new HttpError(404, "Guest not found.");
+  db.prepare("DELETE FROM checkins WHERE guest_id = ?").run(ctx.params.id);
+  broadcast("checkins");
   return { guest: adminGuest(ctx.params.id, ctx.req) };
 });
 
@@ -430,11 +461,14 @@ route("GET", "/api/poll/results", (ctx) => {
 });
 
 // ---------- static files (production build) ----------
-const TYPES = { ".html": "text/html; charset=utf-8", ".js": "text/javascript", ".css": "text/css", ".png": "image/png", ".svg": "image/svg+xml", ".json": "application/json" };
+const CSP = "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'";
+const TYPES = { ".html": "text/html; charset=utf-8", ".js": "text/javascript", ".css": "text/css", ".png": "image/png", ".jpg": "image/jpeg", ".webp": "image/webp", ".svg": "image/svg+xml", ".json": "application/json" };
 
 async function serveStatic(req, res, pathname) {
-  let file = resolve(join(DIST, decodeURIComponent(pathname)));
-  if (!file.startsWith(DIST)) file = join(DIST, "index.html");
+  let decoded = "/";
+  try { decoded = decodeURIComponent(pathname); } catch { /* malformed escape: fall back to the app shell */ }
+  let file = resolve(join(DIST, decoded));
+  if (file !== DIST && !file.startsWith(DIST + sep)) file = join(DIST, "index.html");
   try {
     if (!(await stat(file)).isFile()) throw new Error();
   } catch {
@@ -442,7 +476,13 @@ async function serveStatic(req, res, pathname) {
   }
   try {
     const data = await readFile(file);
-    res.writeHead(200, { "Content-Type": TYPES[extname(file)] ?? "application/octet-stream" });
+    // Vite fingerprints everything under /assets, so it can be cached for good; the app shell must stay fresh.
+    const cache = file.startsWith(join(DIST, "assets") + sep) ? "public, max-age=31536000, immutable" : "no-cache";
+    res.writeHead(200, {
+      "Content-Type": TYPES[extname(file)] ?? "application/octet-stream",
+      "Cache-Control": cache,
+      "Content-Security-Policy": CSP,
+    });
     res.end(data);
   } catch {
     res.writeHead(404).end("Not found. Run `npm run build` first.");
@@ -450,12 +490,13 @@ async function serveStatic(req, res, pathname) {
 }
 
 // ---------- server ----------
-export const server = createServer(async (req, res) => {
+async function handle(req, res) {
   res.setHeader("X-Content-Type-Options", "nosniff");
   res.setHeader("Referrer-Policy", "same-origin");
   res.setHeader("X-Frame-Options", "DENY");
 
-  const url = new URL(req.url, "http://localhost");
+  let url;
+  try { url = new URL(req.url, "http://localhost"); } catch { return send(res, 400, { error: "Bad request." }); }
   if (!url.pathname.startsWith("/api/")) return serveStatic(req, res, url.pathname);
 
   const cookies = parseCookies(req);
@@ -509,6 +550,15 @@ export const server = createServer(async (req, res) => {
     }
   }
   send(res, 404, { error: "Not found." });
+}
+
+// Nothing a request does may take the process down.
+export const server = createServer((req, res) => {
+  handle(req, res).catch((err) => {
+    console.error(err);
+    if (!res.headersSent) send(res, 500, { error: "Something went wrong." });
+    else res.end();
+  });
 });
 
 if (seed()) console.log(`Created staff accounts. Temporary passwords are in ${CREDENTIALS_FILE}`);

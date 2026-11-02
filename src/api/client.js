@@ -24,6 +24,8 @@ export async function api(path, { method = "GET", body } = {}) {
   } catch {
     // Non-JSON (e.g. proxy error page).
   }
+  // A staff call rejected as signed-out means the session ended (expired or deactivated): let the app re-check it.
+  if (res.status === 401 && !path.startsWith("/auth/")) window.dispatchEvent(new Event("amd:signed-out"));
   if (!res.ok) throw new ApiError(res.status, data?.error ?? "Something went wrong.");
   return data;
 }

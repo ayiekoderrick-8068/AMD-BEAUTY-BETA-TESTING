@@ -19,6 +19,9 @@ export function verifyPassword(password, stored) {
   return timingSafeEqual(expected, actual);
 }
 
+// Verified against when a username does not exist, so unknown and known usernames take equally long.
+export const DUMMY_HASH = hashPassword(randomBytes(16).toString("hex"));
+
 // Temporary passwords avoid look-alike characters so they can be read out loud.
 const ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789";
 export function generateTempPassword(length = 16) {
@@ -81,17 +84,22 @@ const failures = new Map();
 function hits(key) {
   const now = Date.now();
   const list = (failures.get(key) ?? []).filter((t) => now - t < WINDOW_MS);
-  failures.set(key, list);
+  if (list.length) failures.set(key, list);
+  else failures.delete(key);
   return list;
 }
+
+// Drop keys whose failures have all aged out, so the map cannot grow without bound.
+setInterval(() => { for (const key of [...failures.keys()]) hits(key); }, WINDOW_MS).unref();
 
 export function isRateLimited(ip, username) {
   return hits(`u:${ip}:${String(username).toLowerCase()}`).length >= 5 || hits(`ip:${ip}`).length >= 20;
 }
 
 export function recordFailure(ip, username) {
-  hits(`u:${ip}:${String(username).toLowerCase()}`).push(Date.now());
-  hits(`ip:${ip}`).push(Date.now());
+  for (const key of [`u:${ip}:${String(username).toLowerCase()}`, `ip:${ip}`]) {
+    failures.set(key, [...hits(key), Date.now()]);
+  }
 }
 
 export function clearFailures(ip, username) {

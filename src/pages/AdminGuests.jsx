@@ -156,6 +156,18 @@ function GuestActions({ guest, event, onEdit, act, onNotice }) {
               Revoke invitation
             </button>
           )}
+          {guest.checkedInAt && (
+            <button
+              type="button"
+              className="link-btn"
+              onClick={() =>
+                window.confirm(`Undo ${guest.name}'s check-in? They will show as not arrived until checked in again.`) &&
+                run(() => api(`/admin/guests/${guest.id}/checkin`, { method: "DELETE" }), `Check-in undone for ${guest.name}.`)
+              }
+            >
+              Undo check-in
+            </button>
+          )}
           <button
             type="button"
             className="link-btn"

@@ -26,18 +26,18 @@ Staff pages are not linked from the public site, and the API checks the user's r
 ### Usher
 
 - Search guests by name or organization, or enter a guest's code.
-- Check a guest in with one tap. Duplicate check-ins are caught.
+- Check a guest in with one tap. Duplicate check-ins are caught. An admin can undo a mistaken check-in from the guest list.
 - The guest list updates live across every usher's device.
 
 ### Admin
 
 - **Overview:** attendance (checked in and expected), poll open and closed, results shown or hidden, live results and a poll-vote reset.
-- **Guests:** add, edit and remove guests, and generate new entry codes.
+- **Guests:** add, edit and remove guests, generate new entry codes and undo check-ins. A guest with the same phone number, or the same name and organization, cannot be added twice.
 - **Ushers:** create accounts, deactivate them (this signs them out immediately) and reset passwords.
 
 ## Getting started
 
-Requires **Node 22.13 or newer**, for the built-in `node:sqlite`.
+Requires **Node 22.13 or newer**, for the built-in `node:sqlite` (`npm install` refuses older versions). Check with `node -v`; with nvm, run `nvm use 24`.
 
 ```bash
 npm ci
@@ -45,7 +45,7 @@ npm run server   # API on http://localhost:3001 (creates server/data/ on first r
 npm run dev      # app on http://localhost:5173 (proxies /api to the server)
 ```
 
-Run the two commands in separate terminals, then open http://localhost:5173.
+Run the two commands in separate terminals, then open http://localhost:5173. If another Vite project already uses that port, start this one with `npx vite --port 5180 --strictPort` and open that address instead.
 
 ### First sign-in
 
@@ -58,7 +58,9 @@ On first run the server creates two staff accounts with random temporary passwor
 
 The passwords are written to `server/data/dev-credentials.txt`. That file is gitignored and readable only by your user, and passwords are never printed to the console. Each account must choose a new password at first sign-in. Passwords need at least 10 characters and must not contain the username. Delete the credentials file once both passwords are changed.
 
-Eight sample guests (codes `AMD-1001` to `AMD-1008`) are added so check-in can be tried straight away.
+Eight sample guests (codes `AMD-1001` to `AMD-1008`) are added so check-in can be tried straight away. In production (`NODE_ENV=production`) they are skipped unless `SEED_SAMPLE_GUESTS=1`. A new database starts with the poll **closed** and results **hidden**; open them from the admin overview when the launch starts.
+
+Lost the admin password? Run `npm run reset-admin` on the server. It writes a new temporary password to the credentials file.
 
 ## Scripts
 
@@ -66,6 +68,7 @@ Eight sample guests (codes `AMD-1001` to `AMD-1008`) are added so check-in can b
 | --- | --- |
 | `npm run dev` | Vite dev server with hot reload |
 | `npm run server` | API server on port 3001 |
+| `npm run reset-admin` | Sets a new temporary admin password (written to the credentials file) |
 | `npm run seed` | Creates staff accounts and sample guests on an empty database |
 | `npm run build` | Production build into `dist/` |
 | `npm start` | Serves `dist/` and the API from one process (production mode) |
@@ -90,6 +93,8 @@ npm start        # port 3001 by default
 | `DATA_DIR` | `server/data` | Folder for the database and dev credentials file |
 | `DB_FILE` | `$DATA_DIR/launchpad.db` | SQLite database path |
 | `PUBLIC_ORIGIN` | (unset) | Public address of the app, e.g. `https://launchpad.example.com`. Used as the base of guest invitation links, and as an allowed origin when a reverse proxy rewrites the `Host` header. **Set this before sending invitations.** Without it, links use whatever address the admin opened the dashboard on. |
+| `TRUST_PROXY` | (unset) | Set to `1` behind a reverse proxy so sign-in rate limiting uses the visitor's address (last `X-Forwarded-For` entry) instead of the proxy's. Without it, everyone shares the proxy's limit. |
+| `SEED_SAMPLE_GUESTS` | (unset) | Set to `1` to add the sample guests to an empty production database |
 | `INVITE_KEY` | (unset) | 32 random bytes, base64-encoded, used to encrypt stored invitation links. If unset, a key is created at `$DATA_DIR/invite.key`. |
 
 ## Security
@@ -99,6 +104,7 @@ npm start        # port 3001 by default
 - Deactivating an usher or resetting a password takes effect on that user's next request.
 - Sign-in is rate limited: 5 failures per username and IP address, or 20 per IP address, within 15 minutes.
 - Requests that change data must come from the same origin, so cross-site requests are rejected.
+- The poll is anonymous: one vote per browser, identified by a cookie. Someone clearing cookies or using a private window can vote again, so treat results as a live pulse, not an audited count.
 
 ## Project structure
 

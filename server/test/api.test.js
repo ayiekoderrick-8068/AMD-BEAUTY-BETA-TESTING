@@ -114,6 +114,27 @@ test("admin adds and edits a guest with a generated code; usher checks in once",
   assert.equal((await usher("GET", "/api/guests")).body.checkedIn, 0);
 });
 
+test("duplicate guests are rejected, and a mistaken check-in can be undone by an admin", async () => {
+  const g = (await admin("POST", "/api/admin/guests", { name: "Dup Test", organization: "Org", phone: "+254 700 111222" })).body.guest;
+  assert.equal((await admin("POST", "/api/admin/guests", { name: "dup test", organization: "ORG" })).status, 409);
+  assert.equal((await admin("POST", "/api/admin/guests", { name: "Someone Else", phone: "254700111222" })).status, 409);
+  // Saving a guest without changing it is not a duplicate of itself.
+  assert.equal((await admin("PUT", `/api/admin/guests/${g.id}`, { name: "Dup Test", organization: "Org", phone: "+254700111222" })).status, 200);
+
+  assert.equal((await admin("POST", "/api/checkin", { guestId: g.id })).body.status, "ok");
+  assert.equal((await usher("DELETE", `/api/admin/guests/${g.id}/checkin`)).status, 403);
+  assert.equal((await admin("DELETE", `/api/admin/guests/${g.id}/checkin`)).body.guest.checkedInAt, null);
+  assert.equal((await admin("POST", "/api/checkin", { guestId: g.id })).body.status, "ok");
+  await admin("DELETE", `/api/admin/guests/${g.id}`);
+});
+
+test("malformed cookies and URLs do not crash the server", async () => {
+  const bad = await fetch(`${BASE}/api/poll`, { headers: { cookie: "amd_aid=%; amd_session=%E0%A4%A" } });
+  assert.equal(bad.status, 200);
+  assert.ok([200, 404].includes((await fetch(`${BASE}/%`)).status)); // app shell or "run build"; never a crash
+  assert.equal((await fetch(`${BASE}/api/poll`)).status, 200);
+});
+
 test("invitation links: unique, read-only, regenerate, revoke, expiry and admin-only", async () => {
   const tokenOf = (url) => url.split("/invite/")[1];
   const a1 = (await admin("POST", "/api/admin/guests", { name: "Amina Invite", organization: "Secret Org", phone: "+254 712 345678" })).body.guest;
@@ -226,6 +247,11 @@ test("admin creates, deactivates and resets an usher; deactivation is immediate"
 
 test("attendee votes once; validation, visibility and closing are enforced", async () => {
   const a = client();
+  // A fresh database starts with the poll closed and results hidden.
+  assert.equal((await a("GET", "/api/poll")).body.open, false);
+  assert.equal((await a("POST", "/api/poll/vote", { answers })).status, 409);
+  assert.equal((await a("GET", "/api/poll/results")).status, 403);
+  await admin("PUT", "/api/admin/settings", { pollOpen: true, resultsVisible: true });
   assert.equal((await a("GET", "/api/poll")).body.submitted, false);
   assert.equal((await a("POST", "/api/poll/vote", { answers: { ...answers, q2: "Natural ingredients" } })).status, 400);
   assert.equal((await a("POST", "/api/poll/vote", { answers: { q1: "Toast" } })).status, 400);
